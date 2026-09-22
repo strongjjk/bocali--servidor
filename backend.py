@@ -204,6 +204,8 @@ CREATE INDEX IF NOT EXISTS orders_store ON orders(store_id,seq DESC);
 CREATE TABLE IF NOT EXISTS audit(id INTEGER PRIMARY KEY AUTOINCREMENT,at TEXT NOT NULL,user_id TEXT NOT NULL,store_id TEXT,action TEXT NOT NULL,resource TEXT);
 PRAGMA user_version=4;
 ''')
+            # Official production starts empty; stores are created by merchant registration.
+            # Local/LAN development may still seed the bundled Cantinho fixture.
             if self.seed_catalog:
                 for s in self.seed['stores']:
                     c.execute('INSERT OR IGNORE INTO stores(id,data) VALUES(?,?)',(s['id'],dump(s)))
@@ -211,6 +213,23 @@ PRAGMA user_version=4;
                 if not c.execute('SELECT 1 FROM audit WHERE action=?',('seed',)).fetchone():
                     for p in self.seed['products']: c.execute('INSERT OR IGNORE INTO products VALUES(?,?,?)',(p['id'],p['storeId'],dump(p)))
                     c.execute('INSERT INTO audit(at,user_id,action) VALUES(?,?,?)',(utc(),'system','seed'))
+            # RC4 migration: remove only the two legacy fictitious stores from
+            # persistent databases. User-created stores use loja_* IDs and are never touched.
+            legacy_demo=('forno','acai')
+            marks=','.join('?' for _ in legacy_demo)
+            c.execute(f'DELETE FROM orders WHERE store_id IN ({marks})',legacy_demo)
+            c.execute(f'DELETE FROM favorites WHERE store_id IN ({marks})',legacy_demo)
+            c.execute(f'DELETE FROM products WHERE store_id IN ({marks})',legacy_demo)
+            c.execute(f'DELETE FROM members WHERE store_id IN ({marks})',legacy_demo)
+            c.execute(f'DELETE FROM stores WHERE id IN ({marks})',legacy_demo)
+            # Remove old pilot wording from Cantinho only when it still has the exact legacy value.
+            row=c.execute('SELECT data FROM stores WHERE id=?',('cantinho',)).fetchone()
+            if row:
+                store=json.loads(row[0]); changed=False
+                if store.get('tag')=='Seu estabelecimento piloto': store['tag']='Pastelaria'; changed=True
+                if store.get('description')=='Escolha seu sabor, personalize e acompanhe seu pedido.':
+                    store['description']='Escolha seu sabor, personalize e acompanhe seu pedido.'
+                if changed: c.execute('UPDATE stores SET data=?,version=version+1 WHERE id=?',(dump(store),'cantinho'))
         try: self.path.chmod(0o600)
         except OSError: pass
 
@@ -291,7 +310,7 @@ PRAGMA user_version=4;
             mine=[json.loads(r['data']) for r in c.execute('SELECT data FROM orders WHERE user_id=? ORDER BY seq DESC LIMIT 200',(uid,))] if uid else []
             managed=[json.loads(r['data']) for r in c.execute('SELECT o.data FROM orders o JOIN members m ON m.store_id=o.store_id WHERE m.user_id=? ORDER BY seq DESC LIMIT 300',(uid,))] if uid else []
             managed=[o for o in managed if o.get('status')!='awaiting_payment']
-        return {'user':session['user'] if session else None,'csrf':session['csrf'] if session else None,'managedStores':owned,'stores':stores,'products':products,'favorites':favorites,'customerOrders':mine,'merchantOrders':managed,'mode':'server','version':'1.0-rc1','demoAddresses':self.allow_samples}
+        return {'user':session['user'] if session else None,'csrf':session['csrf'] if session else None,'managedStores':owned,'stores':stores,'products':products,'favorites':favorites,'customerOrders':mine,'merchantOrders':managed,'mode':'server','version':'1.0-rc4','demoAddresses':self.allow_samples}
 
     def favorites(self,uid,payload):
         sid=text(payload.get('storeId'),'loja',100)
@@ -619,7 +638,7 @@ PRAGMA user_version=4;
             o['revision']+=1; c.execute('UPDATE orders SET data=? WHERE id=?',(dump(o),oid)); self.audit(c,uid,r['store_id'],'order.'+act,oid)
             return {'order':o}
 
-    def setup_owner(self,email,password,name='Respons\u00e1vel do piloto'):
+    def setup_owner(self,email,password,name='Responsável da loja'):
         # One transaction: never leave an orphan user if setup is already complete.
         email=text(email,'e-mail',254).casefold()
         if not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+',email): raise Problem('E-mail inv\u00e1lido.')

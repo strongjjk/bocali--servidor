@@ -6,3 +6,18 @@
 .confidence-badge{display:inline-flex;align-items:center;padding:5px 9px;border-radius:999px;font-size:12px;font-weight:800;margin-left:auto;margin-right:6px;background:#f3f4f6;color:#475569}
 .confidence-badge.high{background:#e8f5ef;color:#17624e}.confidence-badge.medium{background:#fff6dd;color:#805d12}.confidence-badge.low{background:#fdeaea;color:#8e2c2c}
 .draft.confidence-low{border-color:#e5a3a3}.draft.confidence-high{border-color:#b8decf}.price-options{margin-top:10px;padding:10px 12px;border-radius:12px;background:#fff7e8;font-size:13px;color:#664e18}
+
+/* Bocali 1.0 RC4 - dedicated order acceptor */
+.order-card.incoming{border:2px solid #d58a28;box-shadow:0 12px 32px rgba(118,72,11,.12)}
+.order-card.incoming .order-top{background:#fff8e9;margin:-1px -1px 14px;padding:16px;border-radius:16px 16px 10px 10px}
+.order-card.incoming .order-actions .btn:first-child{min-height:52px;font-size:15px}
+.acceptor-shop{position:sticky;top:0;z-index:8;background:rgba(247,247,242,.96);backdrop-filter:blur(10px);padding:12px 0}
+@media(max-width:760px){
+ body:has(.acceptor-shop) .main{padding-bottom:110px}
+ .acceptor-stats{grid-template-columns:repeat(3,1fr);gap:8px}
+ .acceptor-stats .stat{padding:14px 10px}.acceptor-stats .stat-value{font-size:28px}
+ .printer-panel{padding:16px}.printer-options{display:grid;grid-template-columns:1fr;gap:10px}
+ .queue-heading{align-items:flex-start}.order-card.incoming{margin-left:-4px;margin-right:-4px}
+ .order-card .order-actions{width:100%;display:grid;grid-template-columns:1fr;gap:8px}
+ .order-card .order-actions .btn{width:100%}
+}

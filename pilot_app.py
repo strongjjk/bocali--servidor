@@ -28,7 +28,7 @@ from mercadopago_service import MercadoPagoService, MercadoPagoError
 
 ROOT = Path(__file__).resolve().parent
 APP_NAME = 'Bocali'
-APP_VERSION = '1.0-rc3'
+APP_VERSION = '1.0-rc4'
 GATE_TTL = 8 * 60 * 60
 MAX_JSON = 2 * 1024 * 1024
 STATIC = frozenset({
@@ -86,8 +86,11 @@ class Settings:
         mode=env('BOCALI_MODE','PEDE_MODE','local')
         origin=env('BOCALI_PUBLIC_ORIGIN','PEDE_PUBLIC_ORIGIN','http://127.0.0.1:8000').rstrip('/')
         root=Path(env('BOCALI_DATA_DIR','PEDE_DATA_DIR',str(ROOT/'data'))).resolve()
+        # Production is public: legacy pilot codes are ignored. The protected mode
+        # remains available for staging/internal previews.
+        pilot_code = '' if mode == 'production' else env('BOCALI_PILOT_CODE','PEDE_PILOT_CODE','')
         settings=cls(origin,root,mode,
-            env('BOCALI_PILOT_CODE','PEDE_PILOT_CODE',''),
+            pilot_code,
             env('BOCALI_SECRET_KEY','PEDE_SECRET_KEY',''),
             env('BOCALI_SETUP_TOKEN','PEDE_SETUP_TOKEN',''),
             env('BOCALI_DEMO_ADDRESSES','PEDE_DEMO_ADDRESSES','1')=='1',
@@ -245,6 +248,10 @@ class PilotApp:
         return ('Set-Cookie', c.output(header='').strip())
 
     def owner_missing(self):
+        # The one-time Cantinho setup is a legacy/local migration path. Official
+        # production uses normal merchant registration and must never block the homepage.
+        if self.settings.mode == 'production':
+            return False
         with self.db.connect() as c:
             return not bool(c.execute('SELECT 1 FROM members WHERE store_id=?', ('cantinho',)).fetchone())
 
@@ -367,6 +374,8 @@ class PilotApp:
             if req.path in ('/', '/index.html') and self.owner_missing() and cfg.setup_token:
                 return 303, b'', [('Location','/setup')]
             if req.path == '/pilot':
+                if cfg.mode == 'production':
+                    return 303, b'', [('Location','/')]
                 return self.asset('pilot.html')
             name = 'index.html' if req.path == '/' else req.path[1:]
             if name not in STATIC:

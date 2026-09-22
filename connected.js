@@ -3,6 +3,11 @@
 'use strict';
 const Net=window.Net={...window.PedeBootstrap,busy:false,online:true,lastSync:Date.now(),pending:null,authMode:'login',registerMode:'customer',baseline:null,lastSignature:'',saving:null};
 const oldRender=render,oldShell=shell,oldCheckout=checkout,oldDashboard=dashboardView,oldOrdersView=ordersView,oldShowReceipt=showReceipt,oldPrinterHelp=printerHelp;
+
+const officialSettingsView=()=>`${adminHeading('Configurações da loja.','Ajuste operação, impressão e sua conta Bocali.')}<div class="settings-grid"><section class="panel"><h2>Operação</h2><div class="info-box"><strong>Pedidos online</strong><p>Pedidos feitos por clientes aparecem no aceitador automaticamente. Mantenha um celular do balcão conectado e com o som ativado.</p></div><div class="info-box"><strong>Impressão</strong><p>${nativePrinterAvailable()?'Este Android possui a ponte nativa para a Epson.':'Abra o Bocali Android no aparelho do balcão para usar impressão direta na Epson.'}</p></div><a class="btn" href="#/aceitador">Abrir aceitador</a></section><section class="panel"><h2>Conta e pagamentos</h2><div class="info-box"><strong>Conta</strong><p>${Net.user?esc(Net.user.email):'Entre na sua conta para administrar a loja.'}</p></div><div class="info-box"><strong>Pagamentos online</strong><p>${Net.payments?.enabled?'Mercado Pago conectado ao servidor.':'Pix e cartão online serão liberados quando o Mercado Pago for conectado. Dinheiro e cartão na maquininha já podem ser usados.'}</p></div><a class="btn secondary" href="#/conta">Minha conta</a></section></div>`;
+
+settingsView=officialSettingsView;
+
 function cartKey(){return 'pede-v04-cart-'+(Net.user?.id||'guest');}
 function rememberCart(){try{sessionStorage.setItem(cartKey(),JSON.stringify(state.cart));}catch{}}
 function forgetPrivate(){state.cart={storeId:null,items:[]};draft=[];rawText='';Net.pending=null;geo.selection=null;geo.confirmed=null;}
@@ -21,7 +26,7 @@ async function api(path,payload){
  let response;
  try{response=await fetch(path,options);}catch{Net.online=false;updateConnection();throw new Error('Conex\u00e3o indispon\u00edvel. Confira o hist\u00f3rico antes de reenviar.');}
  const data=await response.json();
- if(data.gateRequired){Net.online=false;location.replace('/pilot'+location.hash);throw new Error('Acesso ao piloto expirado. Entre novamente.');}
+ if(data.gateRequired){Net.online=false;location.replace('/');throw new Error('Acesso temporariamente restrito.');}
  if(!response.ok){const err=new Error(data.error||'N\u00e3o foi poss\u00edvel concluir.');err.status=response.status;throw err;}
  Net.online=true;return data;
 }
@@ -29,7 +34,9 @@ async function refresh(force=false){
  if(Net.busy&&!force)return;
  const seq=Net.refreshSeq=(Net.refreshSeq||0)+1;const data=await api('/api/bootstrap');if(seq!==Net.refreshSeq)return;const changed=remoteSignature(data)!==Net.lastSignature;
  const previousUser=Net.user?.id;const previousNew=(Net.merchantOrders||[]).filter(o=>o.status==='new').map(o=>o.id);applyRemote(data);
- const arrived=(Net.merchantOrders||[]).filter(o=>o.status==='new'&&!previousNew.includes(o.id));if(arrived.length&&typeof beep==='function')beep();
+ const arrived=(Net.merchantOrders||[]).filter(o=>o.status==='new'&&!previousNew.includes(o.id));
+ if(arrived.length){document.title='('+arrived.length+') Novo pedido | Bocali';if(typeof beep==='function')beep();}
+ else if(['aceitador','painel'].includes(view))document.title='Aceitador de pedidos | Bocali';
  if(previousUser&&!Net.user){closeModal();location.hash='#/conta';render();return;}
  if(changed&&!$('#modal').open&&!geo.edit&&!draft.length)render();else updateConnection();
 }
@@ -65,18 +72,18 @@ adminSelect=function(){return `<label><span class="only-screen-reader">Sua loja<
 adminHeading=function(title,subtitle){return `<div class="page-heading"><div><div class="eyebrow muted" style="margin-bottom:10px">\u00c1REA DO LOJISTA \u00b7 ACESSO AUTORIZADO</div><h1>${title}</h1><p>${subtitle}</p></div>${adminSelect()}</div>`;};
 shell=function(content){
  oldShell(content);
- document.title='Bocali | '+(view==='conta'?'Sua conta':view==='painel'?'Painel da loja':view==='piloto'?'Preparar operação':'Suas lojas favoritas');
+ document.title='Bocali | '+(view==='conta'?'Sua conta':['aceitador','painel'].includes(view)?'Aceitador de pedidos':'Suas lojas favoritas');
  for(const notice of document.querySelectorAll('.notice.spaced')){if(notice.textContent.startsWith('Protótipo local:'))notice.textContent='Bocali conectado ao servidor. Pedidos confirmados aparecem nesta fila e podem ser enviados à Epson pelo Android.';}
  const note=$('.sidebar-note');if(note)note.innerHTML=ico('shield')+'<strong>Bocali conectado</strong>Contas, cardápios e pedidos sincronizados com o servidor.';
- const tag=$('.demo-tag');if(tag)tag.textContent='BETA 1.0';
- const footer=$('.page-footer span:last-child');if(footer)footer.textContent='Bocali 1.0 RC · acompanhe os pedidos pelo servidor.';
+ const tag=$('.demo-tag');if(tag)tag.textContent='BOCALI 1.0';
+ const footer=$('.page-footer span:last-child');if(footer)footer.textContent='Bocali · pedidos sincronizados em tempo real.';
  const avatar=$('.avatar');if(avatar){avatar.href='#/conta';avatar.textContent=Net.user?Net.user.name.slice(0,1).toUpperCase():'Entrar';avatar.classList.add('account-avatar');avatar.setAttribute('aria-label','Minha conta');}
  const title=$('.topbar-title');if(view==='conta'&&title)title.textContent='Sua conta no Bocali';
  const main=$('#main');if(main){const strip=document.createElement('div');strip.className='connection-strip';strip.innerHTML=`<span id="sync-status" role="status"></span><span>${Net.user?esc(Net.user.name):'Visitante'} · ${Net.mode==='producao'?'online':'ambiente de desenvolvimento'}</span>`;main.prepend(strip);}
  updateConnection();
 };
 function accountView(){
- if(Net.user)return `<div class="page-heading"><div><div class="eyebrow muted">SUA CONTA</div><h1>Ol\u00e1, ${esc(Net.user.name.split(' ')[0])}.</h1><p>Seus favoritos e pedidos acompanham sua conta neste servidor.</p></div></div><div class="account-grid"><section class="panel"><h2>Seu acesso</h2><p class="muted">${esc(Net.user.email)}</p><div class="account-summary">${ico('shield')}<div><strong>${Net.managedStores.length?'Cliente e respons\u00e1vel por loja':'Conta de cliente'}</strong><p>Pedidos de outras pessoas n\u00e3o aparecem no seu hist\u00f3rico.</p></div></div><div class="toolbar"><a class="btn" href="#/${Net.managedStores.length?'painel':'explorar'}">${Net.managedStores.length?'Abrir painel da loja':'Escolher uma loja'}</a><button class="btn secondary" data-net="logout">Sair da conta</button></div></section><section class="panel"><h2>Segurança da conta</h2><p class="muted">Use uma senha exclusiva. Recuperação de senha por e-mail será a próxima camada antes da publicação ampla. Pagamentos online só aparecem quando o Mercado Pago estiver configurado no servidor.</p></section></div>`;
+ if(Net.user)return `<div class="page-heading"><div><div class="eyebrow muted">SUA CONTA</div><h1>Ol\u00e1, ${esc(Net.user.name.split(' ')[0])}.</h1><p>Seus favoritos e pedidos acompanham sua conta neste servidor.</p></div></div><div class="account-grid"><section class="panel"><h2>Seu acesso</h2><p class="muted">${esc(Net.user.email)}</p><div class="account-summary">${ico('shield')}<div><strong>${Net.managedStores.length?'Cliente e respons\u00e1vel por loja':'Conta de cliente'}</strong><p>Pedidos de outras pessoas n\u00e3o aparecem no seu hist\u00f3rico.</p></div></div><div class="toolbar"><a class="btn" href="#/${Net.managedStores.length?'aceitador':'explorar'}">${Net.managedStores.length?'Abrir aceitador de pedidos':'Escolher uma loja'}</a><button class="btn secondary" data-net="logout">Sair da conta</button></div></section><section class="panel"><h2>Segurança da conta</h2><p class="muted">Use uma senha exclusiva. Recuperação de senha por e-mail será a próxima camada antes da publicação ampla. Pagamentos online só aparecem quando o Mercado Pago estiver configurado no servidor.</p></section></div>`;
  const register=Net.authMode==='register',merchant=Net.registerMode==='merchant';
  return `<div class="account-grid auth-grid"><section class="account-story"><div class="eyebrow">UM ACESSO, SUAS LOJAS</div><h1>O pr\u00f3ximo pedido<br>come\u00e7a por aqui.</h1><p>Salve seus lugares favoritos. Pe\u00e7a novamente. Acompanhe o prazo confirmado pela loja.</p><div class="account-feature">${ico('heart')}<div><strong>Suas lojas, juntas.</strong><span>Favoritos guardados na sua conta.</span></div></div><div class="account-feature">${ico('order')}<div><strong>Do pedido ao balc\u00e3o.</strong><span>Cliente e atendente conectados ao mesmo servidor.</span></div></div><div class="account-feature">${ico('shield')}<div><strong>Cada loja, seu acesso.</strong><span>Controle de permiss\u00f5es verificado no servidor.</span></div></div><div class="story-label">BOCALI · SEUS SABORES, POR PERTO</div></section><section class="panel auth-panel"><div class="account-tabs"><button class="${!register?'active':''}" data-net="auth-mode" data-mode="login">Entrar</button><button class="${register?'active':''}" data-net="auth-mode" data-mode="register">Criar conta</button></div><h2>${register?'Seu primeiro acesso.':'Bem-vindo de volta.'}</h2><p class="muted small">${register?'Crie sua conta para pedir ou administrar seu estabelecimento.':'Acesse sua conta Bocali.'}</p><form id="account-form" class="spaced">${register?`<div class="account-role"><button type="button" class="chip ${!merchant?'active':''}" data-net="role" data-role="customer">Quero pedir</button><button type="button" class="chip ${merchant?'active':''}" data-net="role" data-role="merchant">Tenho uma loja</button></div><label class="field"><span>Seu nome</span><input name="name" maxlength="80" autocomplete="name" required></label>${merchant?'<label class="field"><span>Nome do estabelecimento</span><input name="storeName" maxlength="80" required></label><p class="small muted">Cria um estabelecimento separado, inicialmente pausado e pronto para receber seu cardápio.</p>':''}`:''}<label class="field"><span>E-mail</span><input name="email" type="email" autocomplete="username" maxlength="254" placeholder="voce@example.com" required></label><label class="field"><span>Senha ${register?'(pelo menos 12 caracteres)':''}</span><input name="password" type="password" autocomplete="${register?'new-password':'current-password'}" ${register?'minlength="12"':''} maxlength="128" required></label><div id="auth-error" class="auth-error" role="alert"></div><button class="btn full" type="submit">${register?'Criar conta':'Entrar no Bocali'} ${ico('arrow')}</button></form><p class="auth-footnote">${register?'N\u00e3o use senhas de bancos, e-mail ou outros aplicativos.':'A recupera\u00e7\u00e3o por e-mail ainda n\u00e3o foi implementada.'}</p><a class="text-link" href="#/explorar">Conhecer os card\u00e1pios sem entrar</a></section></div>`;
 }
@@ -93,7 +100,7 @@ render=function(){
   shell(`<div class="page-heading"><div><h1>Este acesso \u00e9 de cliente.</h1><p>O painel exige permiss\u00e3o para administrar uma loja.</p></div></div><div class="panel"><h2>As lojas permanecem separadas.</h2><p class="muted">Para administrar um estabelecimento, saia e crie uma conta do tipo "Tenho uma loja".</p><a href="#/conta" class="btn spaced">Abrir minha conta</a></div>`);return;
  }
  oldRender();
- if(view==='painel'){
+ if(view==='aceitador'||view==='painel'){
   $$('[data-action="demo-order"]').forEach(el=>el.remove());
   const heading=$('.page-heading');if(heading){const p=document.createElement('div');p.className='notice green';p.style.marginBottom='20px';p.textContent='Pedidos confirmados pelos clientes chegam aqui automaticamente. Confira pagamento, itens e prazo antes de aceitar.';heading.after(p);}
  }
@@ -256,7 +263,7 @@ printerHelp=function(){
  if(nativePrinterAvailable())return openModal('Impressora da cozinha',`<div class="info-box"><strong>Epson conectada pelo aplicativo Android</strong><p>Use a tela nativa para conferir IP, estado e histórico local de impressão. O pedido continua salvo no servidor.</p></div><button class="btn full" data-native-settings>Configurar Epson neste aparelho</button><div class="notice spaced">Antes de reimprimir, confira a via anterior para não duplicar o preparo.</div>`);
  return oldPrinterHelp();
 };
-createDemoOrder=function(){toast('Use outra conta de cliente para testar a chegada do pedido pelo servidor.');};
+createDemoOrder=function(){toast('Faça um pedido por uma conta de cliente para vê-lo chegar aqui.');};
 publishDraft=async function(){
  if(!draft.length||!draft.every(C.validDraft)||Net.busy)return toast('Confira todas as linhas antes de publicar.');
  const p=catalogPayload();let added=0;
@@ -301,7 +308,7 @@ document.addEventListener('submit',async e=>{
  if(Net.busy){e.preventDefault();e.stopImmediatePropagation();return;}
  if(e.target.id==='account-form'){
   e.preventDefault();e.stopImmediatePropagation();const form=e.target,button=form.querySelector('[type="submit"]'),data=Object.fromEntries(new FormData(form));button.disabled=true;
-  try{const creatingMerchant=Net.authMode==='register'&&Net.registerMode==='merchant';await run(()=>api(Net.authMode==='register'?'/api/register':'/api/login',{...data,mode:Net.registerMode}));closeModal();const ownedProducts=state.products.filter(p=>Net.managedStores.includes(p.storeId));location.hash='#/'+(creatingMerchant||Net.managedStores.length&&!ownedProducts.length?'importar':Net.managedStores.length?'painel':'minhas-lojas');render();}
+  try{const creatingMerchant=Net.authMode==='register'&&Net.registerMode==='merchant';await run(()=>api(Net.authMode==='register'?'/api/register':'/api/login',{...data,mode:Net.registerMode}));closeModal();const ownedProducts=state.products.filter(p=>Net.managedStores.includes(p.storeId));location.hash='#/'+(creatingMerchant||Net.managedStores.length&&!ownedProducts.length?'importar':Net.managedStores.length?'aceitador':'minhas-lojas');render();}
   catch(err){const out=$('#auth-error');if(out)out.textContent=err.message;if(button.isConnected)button.disabled=false;}
  }else if(e.target.id==='pix-payment-form'){
   e.preventDefault();e.stopImmediatePropagation();await submitPixPayment(e.target);

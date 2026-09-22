@@ -31,13 +31,14 @@ async function loadOps(){
  finally{Ops.busy=false;if(view==='piloto')render();}
 }
 render=function(){
+ if(Net.mode==='producao'&&view==='piloto'){location.hash='#/aceitador';return;}
  if(Ops.user!==Net.user?.id){Ops.data=null;Ops.user=Net.user?.id||null;}
- if(view==='piloto'&&Net.user&&writable()){
+ if(Net.mode!=='producao'&&view==='piloto'&&Net.user&&writable()){
   shell(pilotView());const t=$('.topbar-title');if(t)t.textContent='Preparação do piloto';
   if(!Ops.data&&!Ops.busy&&!Ops.error)loadOps();return;
  }
  renderBeforeOps();
- if(view==='configuracoes'&&Net.user&&writable()){
+ if(Net.mode!=='producao'&&view==='configuracoes'&&Net.user&&writable()){
   const p=$('.page-heading');if(p){const a=document.createElement('a');a.href='#/piloto';a.className='btn secondary ops-entry';a.textContent='Preparar o teste e conferir conexões';p.after(a);}
  }
 };

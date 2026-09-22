@@ -1,4 +1,4 @@
-/* No API responses are cached. Fail closed if the pilot server is offline. */
+/* No API responses are cached. Fail closed if the Bocali server is offline. */
 (async function(){
  'use strict';
  try{
@@ -13,7 +13,7 @@
   const app=document.getElementById('app');app.replaceChildren();
   const wrap=document.createElement('div');wrap.className='startup-error';
   const h=document.createElement('h1');h.textContent='N\u00e3o foi poss\u00edvel conectar ao Bocali.';
-  const p=document.createElement('p');p.textContent='Execute o servidor do projeto e abra o endere\u00e7o local indicado. Nenhum pedido foi criado. Este aplicativo n\u00e3o funciona abrindo index.html diretamente.';
+  const p=document.createElement('p');p.textContent='O servidor Bocali não respondeu. Tente novamente em alguns instantes. Nenhum pedido foi criado.';
   const b=document.createElement('button');b.className='btn';b.textContent='Tentar novamente';b.addEventListener('click',()=>location.reload());
   wrap.append(h,p,b);app.append(wrap);
  }
