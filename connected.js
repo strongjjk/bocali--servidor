@@ -1,7 +1,7 @@
 /* Bocali v1.0 RC: servidor, contas, pedidos, Mercado Pago e ponte Android/Epson.
    Credenciais do provedor ficam somente no servidor. */
 'use strict';
-const Net={...window.PedeBootstrap,busy:false,online:true,lastSync:Date.now(),pending:null,authMode:'login',registerMode:'customer',baseline:null,lastSignature:'',saving:null};
+const Net=window.Net={...window.PedeBootstrap,busy:false,online:true,lastSync:Date.now(),pending:null,authMode:'login',registerMode:'customer',baseline:null,lastSignature:'',saving:null};
 const oldRender=render,oldShell=shell,oldCheckout=checkout,oldDashboard=dashboardView,oldOrdersView=ordersView,oldShowReceipt=showReceipt,oldPrinterHelp=printerHelp;
 function cartKey(){return 'pede-v04-cart-'+(Net.user?.id||'guest');}
 function rememberCart(){try{sessionStorage.setItem(cartKey(),JSON.stringify(state.cart));}catch{}}
@@ -82,7 +82,7 @@ function accountView(){
 }
 settingsView=function(){
  const native=nativePrinterAvailable();
- return `${adminHeading('Uma base conectada.','Configure sua loja e o aparelho que recebe os pedidos.')}<div class="settings-grid"><section class="panel"><h2>Dados da loja</h2><form id="store-settings-form"><label class="field"><span>Nome da loja</span><input name="name" value="${esc(adminShop().name)}" maxlength="80" required></label><label class="field"><span>Descrição</span><input name="description" value="${esc(adminShop().description)}" maxlength="240" required></label><label class="field"><span>Pedido mínimo (R$)</span><input name="minimum" value="${(adminShop().minimum/100).toFixed(2)}" inputmode="decimal" required></label><button class="btn" type="submit">Salvar no servidor</button></form></section><section class="panel"><h2>Aplicativo do balcão</h2><div class="info-box"><strong>${native?'Android conectado':'Navegador sem ponte nativa'}</strong><p>${native?'Este aparelho pode enviar comandas estruturadas para a Epson configurada no Bocali.':'No navegador comum, a impressão continua usando a janela do sistema. Para impressão direta, abra esta loja no aplicativo Android Bocali.'}</p></div>${native?'<button class="btn full" data-native-settings>Configurar Epson neste aparelho</button>':''}<div class="info-box"><strong>Pagamentos</strong><p>${Net.payments?.enabled?'Mercado Pago conectado: Pix por QR Code e cartão pelo checkout seguro disponíveis.':'Mercado Pago ainda não configurado no servidor. Dinheiro continua disponível.'}</p></div><div class="info-box"><strong>Mapa e cardápio</strong><p>O PDF pode montar um rascunho para revisão. Endereços reais dependem do provedor de geocodificação configurado.</p></div><a class="btn secondary" href="#/conta">Minha conta</a></section></div>`;
+ return `${adminHeading('Uma base conectada.','Configure sua loja e o aparelho que recebe os pedidos.')}<div class="settings-grid"><section class="panel"><h2>Dados da loja</h2><form id="store-settings-form"><label class="field"><span>Nome da loja</span><input name="name" value="${esc(adminShop().name)}" maxlength="80" required></label><label class="field"><span>Descrição</span><input name="description" value="${esc(adminShop().description)}" maxlength="240" required></label><label class="field"><span>Pedido mínimo (R$)</span><input name="minimum" value="${(adminShop().minimum/100).toFixed(2)}" inputmode="decimal" required></label><button class="btn" type="submit">Salvar no servidor</button></form></section><section class="panel"><h2>Aplicativo do balcão</h2><div class="info-box"><strong>${native?'Android conectado':'Navegador sem ponte nativa'}</strong><p>${native?'Este aparelho pode enviar comandas estruturadas para a Epson configurada no Bocali.':'No navegador comum, a impressão continua usando a janela do sistema. Para impressão direta, abra esta loja no aplicativo Android Bocali.'}</p></div>${native?'<button class="btn full" data-native-settings>Configurar Epson neste aparelho</button>':''}<div class="info-box"><strong>Pagamentos</strong><p>${Net.payments?.enabled?'Mercado Pago conectado: Pix por QR Code e cartão pelo checkout seguro disponíveis.':'Mercado Pago ainda não configurado no servidor. Dinheiro e cartão na maquininha continuam disponíveis.'}</p></div><div class="info-box"><strong>Entrega e cardápio</strong><p>O PDF pode montar um rascunho para revisão. A entrega pode ser configurada por bairro; o CEP serve apenas para preencher o endereço automaticamente.</p></div><a class="btn secondary" href="#/conta">Minha conta</a></section></div>`;
 };
 ordersView=function(){return oldOrdersView().replace('O prazo e o andamento s\u00e3o compartilhados apenas neste navegador. Nenhuma mensagem de WhatsApp ou notifica\u00e7\u00e3o real \u00e9 enviada.','Pedidos salvos na sua conta. Atualiza\u00e7\u00e3o a cada 4 segundos com esta p\u00e1gina aberta. Sem mensagens de WhatsApp.');};
 render=function(){
@@ -98,7 +98,7 @@ render=function(){
   const heading=$('.page-heading');if(heading){const p=document.createElement('div');p.className='notice green';p.style.marginBottom='20px';p.textContent='Pedidos confirmados pelos clientes chegam aqui automaticamente. Confira pagamento, itens e prazo antes de aceitar.';heading.after(p);}
  }
  if(view==='areas'){
-  const notice=$('#main .notice');if(notice)notice.textContent='Desenhe as áreas reais de entrega da sua loja e defina a taxa de cada região. Pedidos fora da cobertura serão bloqueados pelo servidor.';
+  const notice=$('#main .notice');if(notice)notice.textContent='Cadastre os bairros atendidos e a taxa de cada um. O mapa nao e mais necessario para concluir pedidos.';
   if(!Net.demoAddresses)$$('[data-geo="sample"],[data-geo="checkout-sample"]').forEach(el=>el.remove());
  }
 };
@@ -108,23 +108,29 @@ checkout=function(){
  const p=$('#modal .cart-caption');if(p)p.textContent='O servidor recalcula produtos, adicionais, taxa e total antes de criar o pedido.';
  const title=$('#modal h3.small.spaced:nth-of-type(2)');if(title)title.textContent='Pagamento';
  const card=$('input[name="payment"][value="card"]'),pix=$('input[name="payment"][value="pix"]'),cash=$('input[name="payment"][value="cash"]');
- if(card?.parentElement)card.parentElement.innerHTML='<input type="radio" name="payment" value="card">Cartão online <span class="option-detail">Checkout seguro Mercado Pago</span>';
+ if(cash?.parentElement)cash.parentElement.innerHTML='<input type="radio" name="payment" value="cash" checked><span class="offline-payment-label">Dinheiro na entrega</span><span class="option-detail">Pague ao receber</span>';
+ if(card?.parentElement){const label=card.parentElement;label.insertAdjacentHTML('beforebegin','<label class="checkout-option"><input type="radio" name="payment" value="card_machine"><span class="machine-payment-label">Cartão na entrega</span><span class="option-detail">Maquininha do estabelecimento</span></label>');label.innerHTML='<input type="radio" name="payment" value="card">Cartão online <span class="option-detail">Checkout seguro Mercado Pago</span>';}
  if(pix?.parentElement)pix.parentElement.innerHTML='<input type="radio" name="payment" value="pix">Pix online <span class="option-detail">QR Code / copia e cola</span>';
  const online=!!Net.payments?.enabled;
- $$('input[name="payment"]').forEach(input=>{if(input.value!=='cash')input.disabled=!online;});
- if(!online){checkoutPayment='cash';const c=$('input[name="payment"][value="cash"]');if(c)c.checked=true;const totals=$('#checkout-totals');if(totals){const n=document.createElement('div');n.className='notice';n.innerHTML='<strong>Pagamento online em configuração</strong><p>Pix e cartão serão liberados assim que a conta Mercado Pago do estabelecimento estiver conectada.</p>';totals.before(n);}}
+ $$('input[name="payment"]').forEach(input=>{if(input.value==='card'||input.value==='pix')input.disabled=!online;});
+ const paymentTitle=$('#modal h3.small.spaced:nth-of-type(2)');if(paymentTitle)paymentTitle.insertAdjacentHTML('afterend','<div id="cash-change-box" class="cash-change-box spaced"><label class="check-label"><input type="checkbox" id="cash-change-needed">Preciso de troco</label><label class="field" id="cash-change-value" style="display:none"><span>Troco para quanto? (R$)</span><input id="cash-change-for" inputmode="decimal" placeholder="Ex.: 50,00"></label></div>');
+ if(!online){const totals=$('#checkout-totals');if(totals){const n=document.createElement('div');n.className='notice';n.innerHTML='<strong>Pix/cartão online ainda em configuração</strong><p>Dinheiro e cartão na maquininha continuam disponíveis para entrega ou retirada.</p>';totals.before(n);}}
+ refreshOfflinePaymentOptions();
  const note=$('#checkout-note')?.closest('label');if(note){const span=note.querySelector('span');if(span)span.textContent='Observação do pedido (opcional)';const ta=note.querySelector('textarea');if(ta)ta.placeholder='Ex.: sem cebola, molho separado.';}
  const button=$('#place-order');if(button)button.textContent='Continuar para conferir';
 };
+function refreshOfflinePaymentOptions(){const delivery=checkoutMode==='delivery';const a=$('.offline-payment-label'),b=$('.machine-payment-label');if(a)a.textContent=delivery?'Dinheiro na entrega':'Dinheiro na retirada';if(b)b.textContent=delivery?'Cartão na entrega':'Cartão na retirada';const box=$('#cash-change-box');if(box)box.style.display=checkoutPayment==='cash'?'block':'none';const val=$('#cash-change-value');if(val)val.style.display=$('#cash-change-needed')?.checked?'block':'none';}
 function orderPayload(){
  const payload={storeId:state.cart.storeId,items:state.cart.items.map(i=>({productId:i.productId,quantity:i.quantity,extraIds:i.extras.map(e=>e.id),note:i.note||''})),fulfillment:checkoutMode,payment:checkoutPayment,note:$('#checkout-note')?.value||''};
+ if(checkoutPayment==='cash'){const needed=!!$('#cash-change-needed')?.checked;let changeFor=null;if(needed){changeFor=C.moneyToCents($('#cash-change-for')?.value||'');if(changeFor===null)throw new Error('Informe para quanto precisa de troco.');}payload.paymentDetails={changeNeeded:needed,changeFor};}
+ if(checkoutPayment==='card_machine')payload.paymentDetails={machineAt:checkoutMode};
  if(checkoutMode==='delivery'){
-  if(!geo.confirmed||D.addressKey(readAddress())!==geo.confirmed.addressKey)throw new Error('O endere\u00e7o mudou. Localize e confirme novamente.');
+  if(!geo.confirmed||D.addressKey(readAddress())!==geo.confirmed.addressKey)throw new Error('Confira o endereco e o bairro para calcular a taxa.');
   const selected=geo.confirmed;payload.address=selected.address;
   if(selected.source==='demo'){
    const idx=[0,1,2,3].find(i=>D.addressKey({...selected.address,complement:''})===D.addressKey(D.sample(i).address));
-   if(idx===undefined)throw new Error('Exemplo inv\u00e1lido. Localize novamente.');payload.sampleIndex=idx;
-  }else payload.addressToken=selected.addressToken;
+   if(idx===undefined)throw new Error('Exemplo invalido. Localize novamente.');payload.sampleIndex=idx;
+  }else if(selected.source!=='neighborhood') payload.addressToken=selected.addressToken;
  }
  return payload;
 }
@@ -133,7 +139,7 @@ placeOrder=async function(){
  try{
   const payload=orderPayload(),result=await run(()=>api('/api/quote',payload));
   Net.pending={quoteId:result.quoteId,idempotencyKey:crypto.randomUUID?.()||C.uid()+C.uid()};const o=result.order;
-  openModal('Confira antes de enviar',`<div class="notice green">Valores calculados pelo servidor. Nenhum pedido foi enviado ainda.</div><h3 class="spaced">${esc(o.storeName)}</h3><div class="order-body">${o.items.map(i=>`<div><span>${i.quantity}\u00d7 ${esc(i.name)}${i.extras.length?'<br><small>+ '+i.extras.map(e=>esc(e.name)).join(', ')+'</small>':''}</span><strong>${brl((i.unitPrice+i.extras.reduce((s,e)=>s+e.price,0))*i.quantity)}</strong></div>`).join('')}</div>${o.delivery?'<p class="small muted">'+esc(D.formatAddress(o.delivery.address))+'</p>':'<p class="small muted">Retirada no balc\u00e3o.</p>'}<div class="amount-row"><span>Produtos</span><strong>${brl(o.subtotal)}</strong></div><div class="amount-row"><span>Entrega</span><strong>${brl(o.fee)}</strong></div><div class="amount-row total"><span>Total</span><strong>${brl(o.total)}</strong></div><div id="confirm-order-error" role="alert" class="auth-error"></div><button class="btn full spaced" data-net="confirm-order">Confirmar pedido</button><p class="cart-caption">Resumo válido por até 10 minutos. Para Pix/cartão, o pedido só entra na fila da loja depois da aprovação do pagamento.</p>`);
+  openModal('Confira antes de enviar',`<div class="notice green">Valores calculados pelo servidor. Nenhum pedido foi enviado ainda.</div><h3 class="spaced">${esc(o.storeName)}</h3><div class="order-body">${o.items.map(i=>`<div><span>${i.quantity}\u00d7 ${esc(i.name)}${i.extras.length?'<br><small>+ '+i.extras.map(e=>esc(e.name)).join(', ')+'</small>':''}</span><strong>${brl((i.unitPrice+i.extras.reduce((s,e)=>s+e.price,0))*i.quantity)}</strong></div>`).join('')}</div>${o.delivery?'<p class="small muted">'+esc(D.formatAddress(o.delivery.address))+'</p>':'<p class="small muted">Retirada no balc\u00e3o.</p>'}<div class="amount-row"><span>Produtos</span><strong>${brl(o.subtotal)}</strong></div><div class="amount-row"><span>Entrega</span><strong>${brl(o.fee)}</strong></div><div class="amount-row total"><span>Total</span><strong>${brl(o.total)}</strong></div><div id="confirm-order-error" role="alert" class="auth-error"></div><button class="btn full spaced" data-net="confirm-order">Confirmar pedido</button><p class="cart-caption">Resumo válido por até 10 minutos. Somente Pix e cartão online aguardam aprovação do pagamento; dinheiro e maquininha entram direto na fila da loja.</p>`);
  }catch(e){toast(e.message);if(b?.isConnected)b.disabled=false;}
 };
 async function submitServerOrder(button){
@@ -141,8 +147,7 @@ async function submitServerOrder(button){
  try{
   const result=await run(()=>api('/api/orders',Net.pending));const o=result.order;
   Net.pending=null;state.cart={storeId:null,items:[]};rememberCart();render();
-  if(o.payment==='cash'){
-   openModal('Pedido enviado',`<div class="success"><div class="success-mark">${ico('check')}</div><h2>${esc(o.id)}</h2><p>${esc(o.storeName)}<br>Total: <strong>${brl(o.total)}</strong></p><div class="notice green">Pedido enviado para a loja. Pagamento em dinheiro na entrega/retirada.</div><button class="btn full spaced" data-action="goto-orders">Acompanhar meu pedido</button></div>`);return;
+  if(o.payment==='cash'||o.payment==='card_machine'){const msg=o.payment==='cash'?(o.paymentDetails?.changeNeeded?'Dinheiro ao receber. Troco para '+brl(o.paymentDetails.changeFor)+'.':'Dinheiro ao receber, sem troco.'):'Cartao na maquininha '+(o.fulfillment==='delivery'?'na entrega.':'na retirada.');openModal('Pedido enviado',`<div class="success"><div class="success-mark">${ico('check')}</div><h2>${esc(o.id)}</h2><p>${esc(o.storeName)}<br>Total: <strong>${brl(o.total)}</strong></p><div class="notice green">${esc(msg)}</div><button class="btn full spaced" data-action="goto-orders">Acompanhar meu pedido</button></div>`);return;
   }
   await openOnlinePayment(o);
  }catch(e){const el=$('#confirm-order-error');if(el)el.textContent=e.message;if(e.status===409){Net.pending=null;button.textContent='Voltar para conferir';button.dataset.net='retry-checkout';}if(button.isConnected)button.disabled=false;}
@@ -291,6 +296,7 @@ document.addEventListener('click',e=>{
   orderAction(id,{action:'status',to,reason}).then(()=>{render();toast(to==='cancelled'?'Pedido cancelado. Avise a cozinha.':'Etapa atualizada no servidor.');}).catch(err=>toast(err.message));
  }else if(a==='reset'){e.preventDefault();e.stopImmediatePropagation();toast('O banco n\u00e3o pode ser apagado pelo navegador.');}
 },true);
+document.addEventListener('change',e=>{if(e.target.name==='payment'){checkoutPayment=e.target.value;refreshOfflinePaymentOptions();}else if(e.target.name==='fulfillment'){checkoutMode=e.target.value;refreshOfflinePaymentOptions();}else if(e.target.id==='cash-change-needed'){refreshOfflinePaymentOptions();}},true);
 document.addEventListener('submit',async e=>{
  if(Net.busy){e.preventDefault();e.stopImmediatePropagation();return;}
  if(e.target.id==='account-form'){

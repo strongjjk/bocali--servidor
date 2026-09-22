@@ -23,18 +23,19 @@ from pathlib import Path
 from urllib.parse import urlsplit, parse_qs
 from backend import Database, Problem, SESSION_TTL
 from geocoding_service import geocode
+from cep_service import lookup_cep
 from mercadopago_service import MercadoPagoService, MercadoPagoError
 
 ROOT = Path(__file__).resolve().parent
 APP_NAME = 'Bocali'
-APP_VERSION = '1.0-rc2'
+APP_VERSION = '1.0-rc3'
 GATE_TTL = 8 * 60 * 60
 MAX_JSON = 2 * 1024 * 1024
 STATIC = frozenset({
     'index.html', 'loader.js', 'connected.js', 'connected.css', 'app.js',
     'domain.js', 'delivery.js', 'delivery-ui.js', 'order-flow.js', 'styles.css',
     'delivery.css', 'icon.svg', 'manifest.webmanifest', 'service-worker.js', 'native-print.js',
-    'pilot.js', 'pilot.css', 'setup.js', 'operations.js', 'operations.css',
+    'pilot.js', 'pilot.css', 'setup.js', 'operations.js', 'operations.css', 'neighborhood-delivery.js', 'neighborhood-delivery.css',
 })
 CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
        "img-src 'self' data: https://tile.openstreetmap.org; connect-src 'self'; "
@@ -287,7 +288,7 @@ class PilotApp:
             'backupToolAvailable':True, 'automaticBackupConfigured':False,
             'stores':[{'id':s['id'], 'name':s['name'], 'open':s['open'],
                 'products':sum(p['storeId']==s['id'] for p in boot['products']),
-                'deliveryAreas':sum(z['active'] and z['kind']=='delivery' for z in s.get('deliveryConfig',{}).get('zones',[]))}
+                'deliveryAreas':sum(r.get('active',True) for r in s.get('deliveryConfig',{}).get('neighborhoodRates',[])) or sum(z['active'] and z['kind']=='delivery' for z in s.get('deliveryConfig',{}).get('zones',[]))}
                 for s in boot['stores'] if s['id'] in boot['managedStores']],
             'checkedAt':time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
         }
@@ -486,6 +487,10 @@ class PilotApp:
                 self.limit(req, req.path, 120)
             result = actions[req.path](uid,p)
             return (201 if req.path == '/api/orders' else 200), result, []
+        if req.path == '/api/cep':
+            self.limit(req, 'cep', 60, 60)
+            code, data = lookup_cep(p.get('postcode'))
+            return code, data, []
         if req.path == '/api/geocode':
             self.limit(req, 'geocode', 30)
             code, data = geocode(p.get('address'))

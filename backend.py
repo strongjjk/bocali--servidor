@@ -128,6 +128,46 @@ def area_quote(store,point):
     return {'ok':True,'storeId':store['id'],'zoneId':z['id'],'zoneName':z['name'],'fee':z['fee'],'revision':cfg['revision'],'priority':z['priority'],'overlap':len(matches)>1}
 
 
+def clean_neighborhood_rate(rate):
+    if not isinstance(rate,dict) or type(rate.get('active')) is not bool:
+        raise Problem('Taxa por bairro invalida.')
+    aliases=rate.get('aliases',[])
+    if not isinstance(aliases,list) or len(aliases)>20:
+        raise Problem('Apelidos do bairro invalidos.')
+    clean_aliases=[]
+    for alias in aliases:
+        value=text(alias,'apelido do bairro',80)
+        if norm(value) not in {norm(x) for x in clean_aliases}: clean_aliases.append(value)
+    return {'id':identifier(rate.get('id'),'identificador do bairro'),
+            'name':text(rate.get('name'),'bairro',80),'aliases':clean_aliases,
+            'fee':integer(rate.get('fee'),'taxa do bairro',0,100000),'active':rate['active']}
+
+
+def neighborhood_quote(store,address):
+    cfg=store.get('deliveryConfig') or {}
+    rates=[clean_neighborhood_rate(r) for r in cfg.get('neighborhoodRates',[]) if r.get('active')]
+    if not rates: raise Problem('A loja ainda nao cadastrou as taxas por bairro.',422)
+    configured_city=norm(cfg.get('city'))
+    configured_state=norm(cfg.get('state'))
+    if configured_city and norm(address.get('city'))!=configured_city:
+        raise Problem('Esta loja entrega somente em '+str(cfg.get('city'))+'. Confira a cidade.',422)
+    if configured_state and norm(address.get('state'))!=configured_state:
+        raise Problem('Confira a UF do endereco de entrega.',422)
+    wanted=norm(address.get('neighborhood'))
+    matches=[]
+    for rate in rates:
+        names=[rate['name'],*rate.get('aliases',[])]
+        if wanted and any(wanted==norm(x) for x in names): matches.append(rate)
+    if not matches:
+        raise Problem('Este bairro ainda nao esta na area de entrega da loja. Confira o bairro ou escolha retirada.',422)
+    if len(matches)>1:
+        raise Problem('O bairro esta duplicado na tabela de entrega. A loja precisa corrigir a configuracao.',422)
+    rate=matches[0]
+    return {'ok':True,'storeId':store['id'],'zoneId':rate['id'],'zoneName':rate['name'],
+            'neighborhood':rate['name'],'fee':rate['fee'],'revision':cfg.get('revision',1),
+            'mode':'neighborhood','priority':0,'overlap':False}
+
+
 class Database:
     def __init__(self,path,seed_path,allow_samples=True,seed_catalog=True):
         self.path=Path(path); self.path.parent.mkdir(parents=True,exist_ok=True)
@@ -220,7 +260,7 @@ PRAGMA user_version=4;
             c.execute('INSERT INTO users VALUES(?,?,?,?,?)',(uid,email,name,hashed,utc()))
             if store_name:
                 sid='loja_'+secrets.token_hex(8)
-                cfg=copy.deepcopy(self.seed['stores'][0]['deliveryConfig']); cfg['zones']=[]; cfg['revision']=1
+                cfg=copy.deepcopy(self.seed['stores'][0]['deliveryConfig']); cfg['zones']=[]; cfg['neighborhoodRates']=[]; cfg['schema']=2; cfg['revision']=1
                 s={'id':sid,'name':store_name,'initials':''.join(x[0] for x in store_name.split()[:2]).upper(),'type':'Alimenta\u00e7\u00e3o','tag':'Loja no Bocali','description':'Card\u00e1pio em configura\u00e7\u00e3o.','tone':'sage','open':False,'fee':0,'eta':'A confirmar','minimum':0,'deliveryConfig':cfg}
                 c.execute('INSERT INTO stores(id,data) VALUES(?,?)',(sid,dump(s)))
                 c.execute('INSERT INTO members VALUES(?,?)',(uid,sid))
@@ -283,16 +323,24 @@ PRAGMA user_version=4;
         clean=[self.clean_product(p,sid) for p in products]
         if len({p['id'] for p in clean})!=len(clean): raise Problem('IDs de produtos repetidos.')
         cfg=incoming.get('deliveryConfig')
-        if not isinstance(cfg,dict) or not point_valid(cfg.get('reference')) or not isinstance(cfg.get('zones'),list) or len(cfg['zones'])>60: raise Problem('Configura\u00e7\u00e3o de entrega inv\u00e1lida.')
-        zones=[clean_zone(z,sid) for z in cfg['zones']]
+        if not isinstance(cfg,dict) or not point_valid(cfg.get('reference')) or not isinstance(cfg.get('zones',[]),list) or len(cfg.get('zones',[]))>60: raise Problem('Configura\u00e7\u00e3o de entrega inv\u00e1lida.')
+        zones=[clean_zone(z,sid) for z in cfg.get('zones',[])]
         if len({z['id'] for z in zones})!=len(zones): raise Problem('IDs de \u00e1reas repetidos.')
+        raw_rates=cfg.get('neighborhoodRates',[])
+        if not isinstance(raw_rates,list) or len(raw_rates)>300: raise Problem('Tabela de bairros invalida.')
+        rates=[clean_neighborhood_rate(r) for r in raw_rates]
+        keys=[]
+        for rate in rates:
+            keys.extend([norm(rate['name']),*[norm(x) for x in rate.get('aliases',[])]])
+        keys=[x for x in keys if x]
+        if len(set(keys))!=len(keys): raise Problem('Ha bairros ou apelidos repetidos na tabela de entrega.')
         with self.connect(True) as c:
             self.owns(c,uid,sid); current=self.store(c,sid)
             if current['version']!=version: raise Problem('A loja mudou em outro aparelho. Atualize e tente novamente.',409)
             for key,maximum in [('name',80),('description',240),('type',80),('eta',60)]: current[key]=text(incoming.get(key,current[key]),key,maximum)
             if type(incoming.get('open')) is not bool: raise Problem('Estado da loja inv\u00e1lido.')
             current['open']=incoming['open']; current['minimum']=integer(incoming.get('minimum'),'pedido m\u00ednimo',0,1000000)
-            current['deliveryConfig']={'schema':1,'revision':current['deliveryConfig']['revision']+1,'city':text(cfg.get('city'),'cidade',120),'state':text(cfg.get('state'),'UF',2),'reference':cfg['reference'],'zones':zones}
+            current['deliveryConfig']={'schema':2,'revision':current['deliveryConfig']['revision']+1,'city':text(cfg.get('city'),'cidade',120),'state':text(cfg.get('state'),'UF',2),'reference':cfg['reference'],'zones':zones,'neighborhoodRates':rates}
             printer=incoming.get('printer',{'paper':80,'autoPrint':False})
             if not isinstance(printer,dict) or type(printer.get('paper')) is not int or printer['paper'] not in (58,80) or type(printer.get('autoPrint')) is not bool: raise Problem('Impressora inv\u00e1lida.')
             current['printer']={'paper':printer['paper'],'autoPrint':printer['autoPrint']}
@@ -340,7 +388,7 @@ PRAGMA user_version=4;
         sid=text(payload.get('storeId'),'loja',100); store=self.store(c,sid)
         if not store['open']: raise Problem('A loja est\u00e1 pausada.',409)
         fulfillment=payload.get('fulfillment'); payment=payload.get('payment')
-        if fulfillment not in ('delivery','pickup') or payment not in ('cash','card','pix'): raise Problem('Modalidade ou pagamento inv\u00e1lido.')
+        if fulfillment not in ('delivery','pickup') or payment not in ('cash','card_machine','card','pix'): raise Problem('Modalidade ou pagamento invalido.')
         request_items=payload.get('items')
         if not isinstance(request_items,list) or not 1<=len(request_items)<=50: raise Problem('Confira sua sacola.')
         items=[]; subtotal=0; quantity=0
@@ -360,12 +408,38 @@ PRAGMA user_version=4;
             subtotal+=(p['price']+sum(e['price'] for e in selected))*qty; quantity+=qty; items.append(item)
         if subtotal<store['minimum']: raise Problem('O pedido est\u00e1 abaixo do m\u00ednimo da loja.',422)
         if subtotal>10000000: raise Problem('Valor acima do limite permitido.',422)
+        payment_details={}
+        if payment=='cash':
+            details=payload.get('paymentDetails') or {}
+            if not isinstance(details,dict): raise Problem('Dados do pagamento invalidos.')
+            needs=details.get('changeNeeded',False)
+            if type(needs) is not bool: raise Problem('Opcao de troco invalida.')
+            change_for=details.get('changeFor')
+            if needs:
+                change_for=integer(change_for,'troco para',subtotal,20000000)
+            else: change_for=None
+            payment_details={'changeNeeded':needs,'changeFor':change_for}
+        elif payment=='card_machine':
+            payment_details={'machineAt':fulfillment}
         delivery=None; fee=0
         if fulfillment=='delivery':
-            selection=selection or self.selected_address(c,uid,payload)
-            q=area_quote(store,selection['point']); fee=q['fee']
-            delivery={**selection,'quote':q,'confirmed':True,'confirmedAt':utc(),'addressKey':'|'.join(norm(selection['address'].get(k,'')) for k in FIELDS)}
-        return {'storeId':sid,'storeName':store['name'],'items':items,'subtotal':subtotal,'fee':fee,'total':subtotal+fee,'quantity':quantity,'delivery':delivery,'fulfillment':fulfillment,'payment':payment,'paymentStatus':('cash_pending' if payment=='cash' else 'pending'),'note':text(payload.get('note',''),'observa\u00e7\u00e3o',200,False),'demo':False}
+            cfg=store.get('deliveryConfig') or {}
+            if cfg.get('neighborhoodRates'):
+                source=(selection or {}).get('address') if isinstance(selection,dict) else payload.get('address')
+                if not isinstance(source,dict): raise Problem('Preencha o endereco de entrega.',422)
+                address={k:text(source.get(k,''),k,120,k in ('street','number','neighborhood','city','state')) for k in FIELDS}
+                if not re.fullmatch('[A-Za-z]{2}',address['state']): raise Problem('UF invalida.')
+                if address['postcode'] and not re.fullmatch(r'\d{5}-?\d{3}',address['postcode']): raise Problem('CEP invalido.')
+                q=neighborhood_quote(store,address); fee=q['fee']
+                delivery={'address':address,'source':'neighborhood','quote':q,'confirmed':True,'confirmedAt':utc(),
+                          'addressKey':'|'.join(norm(address.get(k,'')) for k in FIELDS)}
+            else:
+                selection=selection or self.selected_address(c,uid,payload)
+                q=area_quote(store,selection['point']); fee=q['fee']
+                delivery={**selection,'quote':q,'confirmed':True,'confirmedAt':utc(),'addressKey':'|'.join(norm(selection['address'].get(k,'')) for k in FIELDS)}
+        if payment=='cash' and payment_details.get('changeNeeded') and payment_details.get('changeFor',0)<subtotal+fee:
+            raise Problem('O valor para troco precisa ser igual ou maior que o total do pedido.',422)
+        return {'storeId':sid,'storeName':store['name'],'items':items,'subtotal':subtotal,'fee':fee,'total':subtotal+fee,'quantity':quantity,'delivery':delivery,'fulfillment':fulfillment,'payment':payment,'paymentDetails':payment_details,'paymentStatus':('cash_pending' if payment in ('cash','card_machine') else 'pending'),'note':text(payload.get('note',''),'observa\u00e7\u00e3o',200,False),'demo':False}
 
     @staticmethod
     def fingerprint(order):
@@ -380,8 +454,9 @@ PRAGMA user_version=4;
     def quote(self,uid,payload):
         with self.connect(True) as c:
             order=self.price_order(c,uid,payload); qid=secrets.token_urlsafe(24)
-            clean_request={k:order[k] for k in ('storeId','fulfillment','payment','note')}
+            clean_request={k:order[k] for k in ('storeId','fulfillment','payment','paymentDetails','note')}
             clean_request['items']=[{'productId':i['productId'],'quantity':i['quantity'],'extraIds':[e['id'] for e in i['extras']],'note':i['note']} for i in order['items']]
+            if order.get('delivery') and order['delivery'].get('source')=='neighborhood': clean_request['address']=order['delivery']['address']
             stored={'order':order,'request':clean_request,'fingerprint':self.fingerprint(order)}
             c.execute('DELETE FROM quotes WHERE expires<? AND id NOT IN (SELECT quote_id FROM orders)',(time.time(),))
             c.execute('INSERT INTO quotes VALUES(?,?,?,?)',(qid,uid,dump(stored),time.time()+QUOTE_TTL))
@@ -402,7 +477,7 @@ PRAGMA user_version=4;
             saved=json.loads(row['data']); selection=saved['order'].get('delivery')
             now_order=self.price_order(c,uid,saved['request'],selection)
             if self.fingerprint(now_order)!=saved['fingerprint']: raise Problem('Pre\u00e7o, produto ou taxa mudou. Recalcule e confirme o novo total.',409)
-            now=utc(); order=saved['order']; initial='new' if order['payment']=='cash' else 'awaiting_payment'
+            now=utc(); order=saved['order']; initial='new' if order['payment'] in ('cash','card_machine') else 'awaiting_payment'
             order.update({'status':initial,'createdAt':now,'events':[{'status':initial,'at':now}],'revision':1,'customerName':self.user(c,uid)['name'],'payments':[]})
             cur=c.execute('INSERT INTO orders(user_id,store_id,idem,quote_id,data) VALUES(?,?,?,?,?)',(uid,order['storeId'],idem,qid,'{}'))
             order['id']='PED-'+str(cur.lastrowid).zfill(6)
