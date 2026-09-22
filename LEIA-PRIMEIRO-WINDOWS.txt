@@ -1,0 +1,11 @@
+BOCALI v0.9 - teste Android + servidor no Windows
+
+1. Extraia a pasta inteira antes de executar. Nao rode o .bat de dentro do ZIP.
+2. Execute INICIAR-ANDROID-NA-REDE.bat.
+3. Na primeira vez, o Windows pode pedir permissao de Firewall. Permita apenas em redes privadas.
+4. Deixe a janela preta aberta enquanto usar o app no celular.
+5. O terminal mostrara um endereco parecido com http://192.168.0.15:8000.
+6. Celular e computador precisam estar na mesma rede.
+
+Se der erro, execute TESTAR-PYTHON.bat e mande uma foto da janela.
+O projeto requer Python 3.11 ou superior.

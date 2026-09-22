@@ -1,0 +1,6 @@
+BOCALI v0.9d - correcao Windows UTF-8
+
+Corrige falha UnicodeDecodeError ao iniciar em Windows/Python 3.14.
+- seed.json agora e lido explicitamente como UTF-8.
+- o iniciador da rede ativa PYTHONUTF8=1 e PYTHONIOENCODING=utf-8.
+- nenhuma configuracao da Epson ou do GloriaFood e alterada.
