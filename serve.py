@@ -4,7 +4,7 @@ import argparse
 import os
 from socketserver import ThreadingMixIn
 from wsgiref.simple_server import WSGIServer, WSGIRequestHandler, make_server
-from pilot_app import create_app
+from pilot_app import create_app, APP_VERSION
 
 class QuietHandler(WSGIRequestHandler):
     def log_message(self, *args):
@@ -36,6 +36,7 @@ def main():
             from waitress import serve
         except ImportError:
             raise SystemExit('Instale requirements-hosted.txt para usar Waitress. Nao publique com --local.')
+        print(f'Bocali {APP_VERSION} online em {app.settings.origin}', flush=True)
         # No forwarded headers are trusted. TLS is terminated by the hosting platform;
         # cookie security and origin checks use the fixed, validated public origin.
         serve(app, host='0.0.0.0', port=port, threads=8, max_request_body_size=11*1024*1024,

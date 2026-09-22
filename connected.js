@@ -75,7 +75,7 @@ shell=function(content){
  document.title='Bocali | '+(view==='conta'?'Sua conta':['aceitador','painel'].includes(view)?'Aceitador de pedidos':'Suas lojas favoritas');
  for(const notice of document.querySelectorAll('.notice.spaced')){if(notice.textContent.startsWith('Protótipo local:'))notice.textContent='Bocali conectado ao servidor. Pedidos confirmados aparecem nesta fila e podem ser enviados à Epson pelo Android.';}
  const note=$('.sidebar-note');if(note)note.innerHTML=ico('shield')+'<strong>Bocali conectado</strong>Contas, cardápios e pedidos sincronizados com o servidor.';
- const tag=$('.demo-tag');if(tag)tag.textContent='BOCALI 1.0';
+ const tag=$('.demo-tag');if(tag)tag.textContent='BOCALI '+String(Net.version||'1.0').replace(/^1\.0-?/,'1.0 ').toUpperCase();
  const footer=$('.page-footer span:last-child');if(footer)footer.textContent='Bocali · pedidos sincronizados em tempo real.';
  const avatar=$('.avatar');if(avatar){avatar.href='#/conta';avatar.textContent=Net.user?Net.user.name.slice(0,1).toUpperCase():'Entrar';avatar.classList.add('account-avatar');avatar.setAttribute('aria-label','Minha conta');}
  const title=$('.topbar-title');if(view==='conta'&&title)title.textContent='Sua conta no Bocali';
@@ -101,7 +101,6 @@ render=function(){
  }
  oldRender();
  if(view==='aceitador'||view==='painel'){
-  $$('[data-action="demo-order"]').forEach(el=>el.remove());
   const heading=$('.page-heading');if(heading){const p=document.createElement('div');p.className='notice green';p.style.marginBottom='20px';p.textContent='Pedidos confirmados pelos clientes chegam aqui automaticamente. Confira pagamento, itens e prazo antes de aceitar.';heading.after(p);}
  }
  if(view==='areas'){
@@ -292,7 +291,7 @@ document.addEventListener('click',e=>{
  const geoButton=e.target.closest('[data-geo]');if(Net.busy&&geoButton){e.preventDefault();e.stopImmediatePropagation();return;}
  const action=e.target.closest('[data-action]');if(!action)return;
  const a=action.dataset.action;
- const mutating=['favorite','status','toggle-store','toggle-product','publish','reset','place-order','accept-order','print-order','print-result','demo-order'];
+ const mutating=['favorite','status','toggle-store','toggle-product','publish','place-order','accept-order','print-order','print-result'];
  if(Net.busy&&a!=='close-modal'){e.preventDefault();e.stopImmediatePropagation();return;}
  if(a==='favorite'){
   e.preventDefault();e.stopImmediatePropagation();if(!requireUser())return;
@@ -301,7 +300,7 @@ document.addEventListener('click',e=>{
   e.preventDefault();e.stopImmediatePropagation();const to=action.dataset.to,id=action.dataset.id;let reason='';
   if(to==='cancelled'){reason=prompt('Informe o motivo. Se o pedido foi pago online, o Bocali solicitará o estorno antes de concluir o cancelamento.');if(!reason?.trim())return;}
   orderAction(id,{action:'status',to,reason}).then(()=>{render();toast(to==='cancelled'?'Pedido cancelado. Avise a cozinha.':'Etapa atualizada no servidor.');}).catch(err=>toast(err.message));
- }else if(a==='reset'){e.preventDefault();e.stopImmediatePropagation();toast('O banco n\u00e3o pode ser apagado pelo navegador.');}
+ }
 },true);
 document.addEventListener('change',e=>{if(e.target.name==='payment'){checkoutPayment=e.target.value;refreshOfflinePaymentOptions();}else if(e.target.name==='fulfillment'){checkoutMode=e.target.value;refreshOfflinePaymentOptions();}else if(e.target.id==='cash-change-needed'){refreshOfflinePaymentOptions();}},true);
 document.addEventListener('submit',async e=>{

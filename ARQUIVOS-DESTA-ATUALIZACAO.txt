@@ -1,0 +1,5 @@
+BOCALI 1.0 RC5
+Envie TODOS estes arquivos para a RAIZ do repositorio bocali--servidor, substituindo os arquivos de mesmo nome.
+Depois do deploy, abra /api/health e confirme:
+- version = 1.0-rc5
+- legacyFixtures = 0

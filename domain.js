@@ -14,25 +14,19 @@ function moneyToCents(value){
 }
 function seed(){
  const stores=[
- {id:'cantinho',name:'Cantinho do Pastel',initials:'CP',type:'Pastelaria',tag:'Seu estabelecimento piloto',description:'Escolha seu sabor, personalize e acompanhe seu pedido.',tone:'peach',open:true,fee:500,eta:'35 a 50 min',minimum:1000},
- {id:'forno',name:'Forno da Vila',initials:'FV',type:'Pizzaria',tag:'Estabelecimento fict\u00edcio',description:'Pizzas e bons encontros, no mesmo lugar.',tone:'sage',open:true,fee:700,eta:'40 a 60 min',minimum:2000},
- {id:'acai',name:'A\u00e7a\u00ed da Pra\u00e7a',initials:'AP',type:'A\u00e7a\u00ed e sorvetes',tag:'Estabelecimento fict\u00edcio',description:'Uma pausa geladinha no seu dia.',tone:'lilac',open:true,fee:400,eta:'25 a 40 min',minimum:1200}
+ {id:'cantinho',name:'Cantinho do Pastel',initials:'CP',type:'Pastelaria',tag:'Pastelaria',description:'Escolha seu sabor, personalize e acompanhe seu pedido.',tone:'peach',open:true,fee:0,eta:'35 a 50 min',minimum:0}
  ];
  const rows=[
- ['cantinho','Pastel de carne','Carne mo\u00edda e azeitona. Descri\u00e7\u00e3o de exemplo.','Cl\u00e1ssicos',1490,'pastel'],
- ['cantinho','Pastel de queijo','Queijo derretido. Descri\u00e7\u00e3o de exemplo.','Cl\u00e1ssicos',1490,'pastel'],
- ['cantinho','Pastel de pizza','Mu\u00e7arela, presunto, tomate e or\u00e9gano. Exemplo.','Cl\u00e1ssicos',1690,'pastel'],
- ['cantinho','Frango com requeij\u00e3o','Recheio de frango com requeij\u00e3o. Exemplo.','Especiais',1790,'pastel'],
- ['cantinho','Costela desfiada','Costela desfiada com queijo. Descri\u00e7\u00e3o de exemplo.','Especiais',2290,'pastel'],
- ['cantinho','Kinder Bueno','Pastel doce. Descri\u00e7\u00e3o de exemplo.','Doces',2090,'sweet'],
- ['cantinho','Refrigerante 600 ml','Bebida gelada. Marca a definir.','Bebidas',800,'drink'],
- ['cantinho','\u00c1gua mineral 500 ml','Sem g\u00e1s.','Bebidas',400,'drink'],
- ['forno','Pizza de mu\u00e7arela','Pizza grande. Produto fict\u00edcio.','Pizzas',4990,'pizza'],
- ['forno','Pizza de calabresa','Pizza grande. Produto fict\u00edcio.','Pizzas',5290,'pizza'],
- ['acai','A\u00e7a\u00ed 500 ml','Por\u00e7\u00e3o de a\u00e7a\u00ed. Produto fict\u00edcio.','A\u00e7a\u00ed',1990,'acai'],
- ['acai','A\u00e7a\u00ed 300 ml','Por\u00e7\u00e3o de a\u00e7a\u00ed. Produto fict\u00edcio.','A\u00e7a\u00ed',1490,'acai']
+ ['cantinho','Pastel de carne','Carne moída e azeitona.','Clássicos',1490,'pastel'],
+ ['cantinho','Pastel de queijo','Queijo derretido.','Clássicos',1490,'pastel'],
+ ['cantinho','Pastel de pizza','Muçarela, presunto, tomate e orégano.','Clássicos',1690,'pastel'],
+ ['cantinho','Frango com requeijão','Frango com requeijão.','Especiais',1790,'pastel'],
+ ['cantinho','Costela desfiada','Costela desfiada com queijo.','Especiais',2290,'pastel'],
+ ['cantinho','Kinder Bueno','Pastel doce.','Doces',2090,'sweet'],
+ ['cantinho','Refrigerante 600 ml','Bebida gelada.','Bebidas',800,'drink'],
+ ['cantinho','Água mineral 500 ml','Sem gás.','Bebidas',400,'drink']
  ];
- return {version:1,stores,products:rows.map((r,i)=>({id:'p'+i,storeId:r[0],name:r[1],description:r[2],category:r[3],price:r[4],art:r[5],available:true,extras:r[5]==='pastel'?[{id:'cheese',name:'Queijo extra',price:300},{id:'bacon',name:'Bacon',price:400}]:[]})),favorites:['cantinho','forno'],orders:[],cart:{storeId:null,items:[]},nextOrder:1,adminStore:'cantinho'};
+ return {version:1,stores,products:rows.map((r,i)=>({id:'p'+i,storeId:r[0],name:r[1],description:r[2],category:r[3],price:r[4],art:r[5],available:true,extras:r[5]==='pastel'?[{id:'cheese',name:'Queijo extra',price:300},{id:'bacon',name:'Bacon',price:400}]:[]})),favorites:[],orders:[],cart:{storeId:null,items:[]},nextOrder:1,adminStore:'cantinho'};
 }
 function totals(cart,fee=0){
  const subtotal=cart.items.reduce((sum,i)=>sum+(i.unitPrice+i.extras.reduce((s,e)=>s+e.price,0))*i.quantity,0);
@@ -87,7 +81,7 @@ function createOrder(state,{fulfillment,payment,note='',delivery=null}){
  let checkedDelivery=null;
  if(fulfillment==='delivery'&&shop.deliveryConfig){if(!engine)throw new Error('Motor de entrega indisponivel.');checkedDelivery=engine.validateDelivery(shop,delivery);}
  const now=new Date().toISOString();const total=totals(state.cart,fulfillment==='delivery'?(checkedDelivery?checkedDelivery.quote.fee:shop.fee):0);
- const order={id:'PED-'+String(state.nextOrder++).padStart(4,'0'),storeId:shop.id,storeName:shop.name,items:JSON.parse(JSON.stringify(state.cart.items)),...total,delivery:checkedDelivery,fulfillment,payment,paymentStatus:'simulated',note:String(note).slice(0,200),status:'new',createdAt:now,events:[{status:'new',at:now}],demo:true};
+ const order={id:'PED-'+String(state.nextOrder++).padStart(4,'0'),storeId:shop.id,storeName:shop.name,items:JSON.parse(JSON.stringify(state.cart.items)),...total,delivery:checkedDelivery,fulfillment,payment,paymentStatus:'pending',note:String(note).slice(0,200),status:'new',createdAt:now,events:[{status:'new',at:now}],demo:false};
  state.orders.unshift(order);state.cart={storeId:null,items:[]};return order;
 }
 const api={uid,norm,moneyToCents,seed,totals,parseMenu,validDraft,transition,transitions,createOrder,validateCart};

@@ -213,15 +213,23 @@ PRAGMA user_version=4;
                 if not c.execute('SELECT 1 FROM audit WHERE action=?',('seed',)).fetchone():
                     for p in self.seed['products']: c.execute('INSERT OR IGNORE INTO products VALUES(?,?,?)',(p['id'],p['storeId'],dump(p)))
                     c.execute('INSERT INTO audit(at,user_id,action) VALUES(?,?,?)',(utc(),'system','seed'))
-            # RC4 migration: remove only the two legacy fictitious stores from
-            # persistent databases. User-created stores use loja_* IDs and are never touched.
-            legacy_demo=('forno','acai')
-            marks=','.join('?' for _ in legacy_demo)
-            c.execute(f'DELETE FROM orders WHERE store_id IN ({marks})',legacy_demo)
-            c.execute(f'DELETE FROM favorites WHERE store_id IN ({marks})',legacy_demo)
-            c.execute(f'DELETE FROM products WHERE store_id IN ({marks})',legacy_demo)
-            c.execute(f'DELETE FROM members WHERE store_id IN ({marks})',legacy_demo)
-            c.execute(f'DELETE FROM stores WHERE id IN ({marks})',legacy_demo)
+            # RC5 production cleanup. These IDs/names belonged only to bundled fixtures.
+            # User-created stores use loja_* IDs and are never deleted by this migration.
+            legacy_ids={'forno','acai'}
+            legacy_names={'Forno da Vila','Açaí da Praça'}
+            for row in c.execute('SELECT id,data FROM stores').fetchall():
+                sid=row[0]
+                try: store_data=json.loads(row[1])
+                except Exception: store_data={}
+                if sid in legacy_ids or (store_data.get('name') in legacy_names and store_data.get('tag')=='Estabelecimento fictício'):
+                    c.execute('DELETE FROM orders WHERE store_id=?',(sid,))
+                    c.execute('DELETE FROM favorites WHERE store_id=?',(sid,))
+                    c.execute('DELETE FROM products WHERE store_id=?',(sid,))
+                    c.execute('DELETE FROM members WHERE store_id=?',(sid,))
+                    c.execute('DELETE FROM stores WHERE id=?',(sid,))
+            if not c.execute('SELECT 1 FROM audit WHERE action=?',('production_cleanup_rc5',)).fetchone():
+                c.execute('INSERT INTO audit(at,user_id,action,resource) VALUES(?,?,?,?)',
+                          (utc(),'system','production_cleanup_rc5','legacy-fixtures'))
             # Remove old pilot wording from Cantinho only when it still has the exact legacy value.
             row=c.execute('SELECT data FROM stores WHERE id=?',('cantinho',)).fetchone()
             if row:
@@ -232,6 +240,11 @@ PRAGMA user_version=4;
                 if changed: c.execute('UPDATE stores SET data=?,version=version+1 WHERE id=?',(dump(store),'cantinho'))
         try: self.path.chmod(0o600)
         except OSError: pass
+
+    def legacy_fixture_count(self):
+        with self.connect() as c:
+            row=c.execute("SELECT COUNT(*) AS n FROM stores WHERE id IN ('forno','acai')").fetchone()
+            return int(row['n'])
 
     def audit(self,c,uid,store_id,action,resource=None):
         c.execute('INSERT INTO audit(at,user_id,store_id,action,resource) VALUES(?,?,?,?,?)',(utc(),uid,store_id,action,resource))

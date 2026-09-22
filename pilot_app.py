@@ -28,7 +28,7 @@ from mercadopago_service import MercadoPagoService, MercadoPagoError
 
 ROOT = Path(__file__).resolve().parent
 APP_NAME = 'Bocali'
-APP_VERSION = '1.0-rc4'
+APP_VERSION = '1.0-rc5'
 GATE_TTL = 8 * 60 * 60
 MAX_JSON = 2 * 1024 * 1024
 STATIC = frozenset({
@@ -362,7 +362,8 @@ class PilotApp:
                 return 200, self.operations(self.session(req, True)), []
             if req.path == '/api/health':
                 return 200, {'ok':True, 'version':APP_VERSION, 'appName':APP_NAME, 'mode':('production' if cfg.production else 'development'), 'pdf':cfg.enable_pdf, 'payments':self.mp.enabled,
-                    'geocoding':bool(os.environ.get('GEOAPIFY_API_KEY')), 'demoAddresses':self.db.allow_samples}, []
+                    'geocoding':bool(os.environ.get('GEOAPIFY_API_KEY')), 'demoAddresses':self.db.allow_samples,
+                    'legacyFixtures':self.db.legacy_fixture_count()}, []
             if req.path == '/payment-return':
                 # Browser checkout return. Payment status is never trusted from this URL; the
                 # customer order screen reads the server state updated by signed webhooks/polling.
