@@ -10,6 +10,7 @@ import ipaddress
 import json
 import mimetypes
 import os
+import re
 import secrets
 import subprocess
 import sys
@@ -28,7 +29,7 @@ from mercadopago_service import MercadoPagoService, MercadoPagoError
 
 ROOT = Path(__file__).resolve().parent
 APP_NAME = 'Bocali'
-APP_VERSION = '1.0-rc5'
+APP_VERSION = '1.0-rc6'
 GATE_TTL = 8 * 60 * 60
 MAX_JSON = 2 * 1024 * 1024
 STATIC = frozenset({
@@ -36,9 +37,10 @@ STATIC = frozenset({
     'domain.js', 'delivery.js', 'delivery-ui.js', 'order-flow.js', 'styles.css',
     'delivery.css', 'icon.svg', 'manifest.webmanifest', 'service-worker.js', 'native-print.js',
     'pilot.js', 'pilot.css', 'setup.js', 'operations.js', 'operations.css', 'neighborhood-delivery.js', 'neighborhood-delivery.css',
+    'professional.js', 'professional.css',
 })
 CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
-       "img-src 'self' data: https://tile.openstreetmap.org; connect-src 'self'; "
+       "img-src 'self' data: blob: https://tile.openstreetmap.org; connect-src 'self'; "
        "frame-src 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; "
        "form-action 'self'; worker-src 'self'")
 
@@ -271,6 +273,71 @@ class PilotApp:
             Path(name).suffix, mimetypes.guess_type(name)[0] or 'application/octet-stream')
         return 200, (ROOT / name).read_bytes(), [('Content-Type', mime + '; charset=utf-8')]
 
+    def media_dir(self):
+        path=self.settings.data_dir/'media'
+        path.mkdir(parents=True,exist_ok=True)
+        return path
+
+    @staticmethod
+    def image_type(raw, content_type):
+        if raw.startswith(b'\xff\xd8\xff'):
+            return 'jpg','image/jpeg'
+        if raw.startswith(b'\x89PNG\r\n\x1a\n'):
+            return 'png','image/png'
+        if len(raw)>=12 and raw[:4]==b'RIFF' and raw[8:12]==b'WEBP':
+            return 'webp','image/webp'
+        raise Problem('Use uma imagem JPG, PNG ou WebP valida.',415)
+
+    def media_asset(self, name):
+        if not re.fullmatch(r'[a-f0-9]{32}\.(?:jpg|png|webp)',name):
+            raise Problem('Imagem nao encontrada.',404)
+        path=self.media_dir()/name
+        if not path.is_file(): raise Problem('Imagem nao encontrada.',404)
+        mime={'jpg':'image/jpeg','png':'image/png','webp':'image/webp'}[name.rsplit('.',1)[1]]
+        return 200,path.read_bytes(),[('Content-Type',mime)]
+
+    def upload_media(self, req, session):
+        self.limit(req,'media',40,60)
+        sid=req.header('X-Bocali-Store-Id').strip()
+        kind=req.header('X-Bocali-Media-Kind').strip()
+        pid=req.header('X-Bocali-Product-Id').strip()
+        if not sid or kind not in ('logo','cover','product'):
+            raise Problem('Destino da imagem invalido.')
+        limit=6*1024*1024 if kind=='cover' else 4*1024*1024
+        raw=req.body(req.header('Content-Type').split(';')[0].strip(),limit)
+        ext,mime=self.image_type(raw,req.header('Content-Type'))
+        filename=secrets.token_hex(16)+'.'+ext
+        path=self.media_dir()/filename
+        path.write_bytes(raw)
+        try: path.chmod(0o600)
+        except OSError: pass
+        url='/media/'+filename
+        uid=session['user']['id']; old=''
+        try:
+            if kind=='product':
+                if not pid: raise Problem('Produto nao informado.')
+                with self.db.connect() as c:
+                    self.db.owns(c,uid,sid)
+                    row=c.execute('SELECT data FROM products WHERE id=? AND store_id=?',(pid,sid)).fetchone()
+                    if not row: raise Problem('Produto nao encontrado.',404)
+                    old=json.loads(row['data']).get('imageUrl','')
+                self.db.set_product_media(uid,sid,pid,url)
+            else:
+                with self.db.connect() as c:
+                    self.db.owns(c,uid,sid)
+                    old=self.db.store(c,sid).get('logoUrl' if kind=='logo' else 'coverUrl','')
+                self.db.set_store_media(uid,sid,kind,url)
+        except Exception:
+            try: path.unlink()
+            except OSError: pass
+            raise
+        if isinstance(old,str) and old.startswith('/media/') and old!=url:
+            old_name=old.split('/media/',1)[1]
+            if re.fullmatch(r'[a-f0-9]{32}\.(?:jpg|png|webp)',old_name):
+                try:(self.media_dir()/old_name).unlink()
+                except OSError: pass
+        return 201,{'ok':True,'url':url,'kind':kind,'contentType':mime},[]
+
     def bootstrap(self, session):
         data = self.db.bootstrap(session)
         mode='producao' if self.settings.production else ('desenvolvimento-rede-local' if self.settings.mode=='lan' else 'desenvolvimento-local')
@@ -363,7 +430,9 @@ class PilotApp:
             if req.path == '/api/health':
                 return 200, {'ok':True, 'version':APP_VERSION, 'appName':APP_NAME, 'mode':('production' if cfg.production else 'development'), 'pdf':cfg.enable_pdf, 'payments':self.mp.enabled,
                     'geocoding':bool(os.environ.get('GEOAPIFY_API_KEY')), 'demoAddresses':self.db.allow_samples,
-                    'legacyFixtures':self.db.legacy_fixture_count()}, []
+                    'media':True, 'ui':'professional', 'legacyFixtures':self.db.legacy_fixture_count()}, []
+            if req.path.startswith('/media/'):
+                return self.media_asset(req.path.split('/media/',1)[1])
             if req.path == '/payment-return':
                 # Browser checkout return. Payment status is never trusted from this URL; the
                 # customer order screen reads the server state updated by signed webhooks/polling.
@@ -402,6 +471,8 @@ class PilotApp:
             except (subprocess.TimeoutExpired, ValueError):
                 data = {'error':'O PDF excedeu os limites de leitura.'}
             return (422 if 'error' in data else 200), data, []
+        if req.path == '/api/media':
+            return self.upload_media(req,session)
         p=req.json()
         token=req.cookie('pede_session')
         if req.path=='/api/payment':
@@ -477,6 +548,31 @@ class PilotApp:
             if req.path.endswith('pilot-lock'):
                 headers.append(self.cookie('pede_pilot','',0))
             return 200, {'ok':True}, headers
+        if req.path == '/api/media-remove':
+            sid=p.get('storeId')
+            kind=p.get('kind')
+            if not isinstance(sid,str) or not sid or kind not in ('logo','cover','product'):
+                raise Problem('Destino da imagem invalido.')
+            old=''
+            if kind=='product':
+                pid=p.get('productId')
+                if not isinstance(pid,str) or not pid: raise Problem('Produto nao informado.')
+                with self.db.connect() as c:
+                    self.db.owns(c,uid,sid)
+                    row=c.execute('SELECT data FROM products WHERE id=? AND store_id=?',(pid,sid)).fetchone()
+                    if not row: raise Problem('Produto nao encontrado.',404)
+                    old=json.loads(row['data']).get('imageUrl','')
+                self.db.set_product_media(uid,sid,pid,'')
+            else:
+                with self.db.connect() as c:
+                    self.db.owns(c,uid,sid); old=self.db.store(c,sid).get('logoUrl' if kind=='logo' else 'coverUrl','')
+                self.db.set_store_media(uid,sid,kind,'')
+            if isinstance(old,str) and old.startswith('/media/'):
+                name=old.split('/media/',1)[1]
+                if re.fullmatch(r'[a-f0-9]{32}\.(?:jpg|png|webp)',name):
+                    try:(self.media_dir()/name).unlink()
+                    except OSError: pass
+            return 200,{'ok':True},[]
         if req.path=='/api/order-action' and p.get('action')=='status' and p.get('to')=='cancelled':
             target=self.db.refund_target(uid,p)
             if target:

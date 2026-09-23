@@ -6,7 +6,7 @@
   if(r.status===403){const problem=await r.json();if(problem.gateRequired){location.replace('/pilot'+location.hash);return;}}
   if(!r.ok)throw new Error();
   window.PedeBootstrap=await r.json();
-  for(const src of ['delivery.js','domain.js','order-flow.js','app.js','delivery-ui.js','neighborhood-delivery.js','native-print.js','connected.js','operations.js']){
+  for(const src of ['delivery.js','domain.js','order-flow.js','app.js','delivery-ui.js','neighborhood-delivery.js','native-print.js','connected.js','operations.js','professional.js']){
    await new Promise((resolve,reject)=>{const s=document.createElement('script');s.src=src;s.onload=resolve;s.onerror=reject;document.body.append(s);});
   }
  }catch{

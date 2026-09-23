@@ -62,6 +62,18 @@ def identifier(value, label):
     return value
 
 
+
+
+def clean_media_url(value):
+    if value in (None, ''):
+        return ''
+    if not isinstance(value, str) or len(value) > 120:
+        raise Problem('Imagem invalida.')
+    value=value.strip()
+    if not re.fullmatch(r'/media/[a-f0-9]{32}\.(?:jpg|png|webp)', value):
+        raise Problem('Imagem invalida.')
+    return value
+
 def integer(value, label, lo=0, hi=10000000):
     if type(value) is not int or not lo <= value <= hi:
         raise Problem('Valor inv\u00e1lido: '+label+'.')
@@ -293,7 +305,7 @@ PRAGMA user_version=4;
             if store_name:
                 sid='loja_'+secrets.token_hex(8)
                 cfg=copy.deepcopy(self.seed['stores'][0]['deliveryConfig']); cfg['zones']=[]; cfg['neighborhoodRates']=[]; cfg['schema']=2; cfg['revision']=1
-                s={'id':sid,'name':store_name,'initials':''.join(x[0] for x in store_name.split()[:2]).upper(),'type':'Alimenta\u00e7\u00e3o','tag':'Loja no Bocali','description':'Card\u00e1pio em configura\u00e7\u00e3o.','tone':'sage','open':False,'fee':0,'eta':'A confirmar','minimum':0,'deliveryConfig':cfg}
+                s={'id':sid,'name':store_name,'initials':''.join(x[0] for x in store_name.split()[:2]).upper(),'type':'Alimenta\u00e7\u00e3o','tag':'Loja no Bocali','description':'Card\u00e1pio em configura\u00e7\u00e3o.','tone':'sage','open':False,'fee':0,'eta':'A confirmar','minimum':0,'logoUrl':'','coverUrl':'','deliveryConfig':cfg}
                 c.execute('INSERT INTO stores(id,data) VALUES(?,?)',(sid,dump(s)))
                 c.execute('INSERT INTO members VALUES(?,?)',(uid,sid))
             self.audit(c,uid,None,'register')
@@ -323,7 +335,7 @@ PRAGMA user_version=4;
             mine=[json.loads(r['data']) for r in c.execute('SELECT data FROM orders WHERE user_id=? ORDER BY seq DESC LIMIT 200',(uid,))] if uid else []
             managed=[json.loads(r['data']) for r in c.execute('SELECT o.data FROM orders o JOIN members m ON m.store_id=o.store_id WHERE m.user_id=? ORDER BY seq DESC LIMIT 300',(uid,))] if uid else []
             managed=[o for o in managed if o.get('status')!='awaiting_payment']
-        return {'user':session['user'] if session else None,'csrf':session['csrf'] if session else None,'managedStores':owned,'stores':stores,'products':products,'favorites':favorites,'customerOrders':mine,'merchantOrders':managed,'mode':'server','version':'1.0-rc4','demoAddresses':self.allow_samples}
+        return {'user':session['user'] if session else None,'csrf':session['csrf'] if session else None,'managedStores':owned,'stores':stores,'products':products,'favorites':favorites,'customerOrders':mine,'merchantOrders':managed,'mode':'server','version':'1.0-rc6','demoAddresses':self.allow_samples}
 
     def favorites(self,uid,payload):
         sid=text(payload.get('storeId'),'loja',100)
@@ -346,7 +358,7 @@ PRAGMA user_version=4;
         if type(p.get('available')) is not bool: raise Problem('Disponibilidade inv\u00e1lida.')
         art=p.get('art','pastel')
         if art not in ('pastel','pizza','sweet','drink','acai','bag','menu'): art='pastel'
-        return {'id':identifier(p.get('id'),'ID do produto'),'storeId':sid,'name':text(p.get('name'),'produto',100),'description':text(p.get('description',''),'descri\u00e7\u00e3o',240,False),'category':text(p.get('category'),'categoria',50),'price':integer(p.get('price'),'pre\u00e7o',1,10000000),'available':p['available'],'art':art,'extras':clean}
+        return {'id':identifier(p.get('id'),'ID do produto'),'storeId':sid,'name':text(p.get('name'),'produto',100),'description':text(p.get('description',''),'descri\u00e7\u00e3o',240,False),'category':text(p.get('category'),'categoria',50),'price':integer(p.get('price'),'pre\u00e7o',1,10000000),'available':p['available'],'art':art,'imageUrl':clean_media_url(p.get('imageUrl','')),'extras':clean}
 
     def catalog(self,uid,payload):
         sid=text(payload.get('storeId'),'loja',100); version=integer(payload.get('expectedVersion'),'vers\u00e3o',1)
@@ -370,6 +382,8 @@ PRAGMA user_version=4;
             self.owns(c,uid,sid); current=self.store(c,sid)
             if current['version']!=version: raise Problem('A loja mudou em outro aparelho. Atualize e tente novamente.',409)
             for key,maximum in [('name',80),('description',240),('type',80),('eta',60)]: current[key]=text(incoming.get(key,current[key]),key,maximum)
+            current['logoUrl']=clean_media_url(incoming.get('logoUrl',current.get('logoUrl','')))
+            current['coverUrl']=clean_media_url(incoming.get('coverUrl',current.get('coverUrl','')))
             if type(incoming.get('open')) is not bool: raise Problem('Estado da loja inv\u00e1lido.')
             current['open']=incoming['open']; current['minimum']=integer(incoming.get('minimum'),'pedido m\u00ednimo',0,1000000)
             current['deliveryConfig']={'schema':2,'revision':current['deliveryConfig']['revision']+1,'city':text(cfg.get('city'),'cidade',120),'state':text(cfg.get('state'),'UF',2),'reference':cfg['reference'],'zones':zones,'neighborhoodRates':rates}
@@ -384,6 +398,30 @@ PRAGMA user_version=4;
             c.execute('DELETE FROM products WHERE store_id=?',(sid,))
             for p in clean: c.execute('INSERT INTO products VALUES(?,?,?)',(p['id'],sid,dump(p)))
             self.audit(c,uid,sid,'catalog.update')
+        return {'ok':True}
+
+    def set_store_media(self,uid,sid,kind,url):
+        if kind not in ('logo','cover'):
+            raise Problem('Tipo de imagem invalido.')
+        clean_url=clean_media_url(url)
+        with self.connect(True) as c:
+            self.owns(c,uid,sid)
+            current=self.store(c,sid)
+            current.pop('version',None)
+            current['logoUrl' if kind=='logo' else 'coverUrl']=clean_url
+            c.execute('UPDATE stores SET data=?,version=version+1 WHERE id=?',(dump(current),sid))
+            self.audit(c,uid,sid,'media.store.'+kind,clean_url or 'removed')
+        return {'ok':True}
+
+    def set_product_media(self,uid,sid,pid,url):
+        clean_url=clean_media_url(url)
+        with self.connect(True) as c:
+            self.owns(c,uid,sid)
+            row=c.execute('SELECT data FROM products WHERE id=? AND store_id=?',(pid,sid)).fetchone()
+            if not row: raise Problem('Produto nao encontrado.',404)
+            product=json.loads(row['data']); product['imageUrl']=clean_url
+            c.execute('UPDATE products SET data=? WHERE id=?',(dump(product),pid))
+            self.audit(c,uid,sid,'media.product',pid)
         return {'ok':True}
 
     def add_geocodes(self,uid,results):
